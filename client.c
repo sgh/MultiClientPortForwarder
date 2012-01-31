@@ -48,16 +48,21 @@ void connection_handle(struct ConnectedSocket* it) {
 				case CMD_CLOSE_PORT:
 					printf("Close port: %d\n", cmd_closeport->id);
 					connection = conn_from_id(cmd_closeport->id);
-					close(connection->fd);
-					connection->fd = -1;
+					if (connection) {
+						close(connection->fd);
+						connection->fd = -1;
+					}
 					consumed = sizeof(struct CMD_ClosePort);
 					break;
 				case MSG_SOCKET_DATA:
 // 					printf("Socket data %d bytes (%d bytes payload)\n", it->rxlen, msg_socketdata->len);
 					if (it->rxlen < msg_socketdata->len + sizeof(struct MSG_SocketData))
 						break;
-					res = send(conn_from_id(msg_socketdata->id)->fd, it->rxbuffer+sizeof(struct MSG_SocketData), msg_socketdata->len, 0);
-					assert(res == msg_socketdata->len);
+					connection = conn_from_id(msg_socketdata->id);
+					if (connection) {
+						res = send(connection->fd, it->rxbuffer+sizeof(struct MSG_SocketData), msg_socketdata->len, 0);
+						assert(res == msg_socketdata->len);
+					}
 					consumed = msg_socketdata->len + sizeof(struct MSG_SocketData);
 					break;
 				default:

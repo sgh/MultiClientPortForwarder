@@ -151,5 +151,5 @@ struct ConnectedSocket* conn_from_id(unsigned short id) {
 		it = it->next;
 	} while (it != connected_sockets);
 	printf("Failed to lookup id %d\n", id);
-	assert (0);
+	return NULL;
 }

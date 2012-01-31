@@ -20,7 +20,7 @@ void connection_accept(struct ConnectedSocket* it) {
 		
 		int server_sockfd;
 		struct ConnectedSocket* server_socket ;
-		server_sockfd = create_server_socket("2222");
+		server_sockfd = create_server_socket("8080");
 		server_socket = (struct ConnectedSocket*)malloc(sizeof(struct ConnectedSocket));
 		memset(server_socket, 0, sizeof(struct ConnectedSocket));
 		server_socket->fd = server_sockfd;
@@ -35,7 +35,7 @@ void connection_accept(struct ConnectedSocket* it) {
 		new_socket->id = id_sequence;
 		struct CMD_ConnectPort cmd;
 		cmd.type = CMD_CONNECT_PORT;
-		cmd.port = 22;
+		cmd.port = 80;
 		cmd.id = new_socket->id;
 		id_sequence++;
 		res = send(it->clientsock->fd, &cmd, sizeof(cmd), 0);
@@ -67,7 +67,11 @@ void connection_handle(struct ConnectedSocket* it) {
 					struct ConnectedSocket* connection = conn_from_id(msg_socketdata->id);
 					if (connection) {
 						res = send(connection->fd, it->rxbuffer+sizeof(struct MSG_SocketData), msg_socketdata->len, 0);
-						assert(res == msg_socketdata->len);
+						if (res == -1) {
+							conn_close(it);
+							break;
+						}
+						assert(res == -1 || res == msg_socketdata->len);
 					}
 					consumed = msg_socketdata->len + sizeof(struct MSG_SocketData);
 					break;
@@ -81,8 +85,8 @@ void connection_handle(struct ConnectedSocket* it) {
 // 				printf("Consumed %d\n", consumed);
 			}
 		} while (consumed && it->rxlen);
-		if (it->rxlen)
-			printf("Left with %d pending bytes\n", it->rxlen);
+// 		if (it->rxlen)
+// 			printf("Left with %d pending bytes\n", it->rxlen);
 	}
 
 	/* Forward local socket data over the channel to the client */
@@ -93,7 +97,7 @@ void connection_handle(struct ConnectedSocket* it) {
 		cmd.type = CMD_CLOSE_PORT;
 		cmd.id = it->id;
 		res = send(it->clientsock->fd, &cmd, sizeof(cmd), 0);
-		assert(res == sizeof(cmd));
+		assert(res == -1 || res == sizeof(cmd));
 	}
 }
 
@@ -116,6 +120,8 @@ int main() {
 		struct ConnectedSocket* it = connected_sockets;
 		do {
 			if (!it) break;
+			if (sizeof(it->rxbuffer) <= it->rxlen)
+				continue;
 			FD_SET(it->fd, &rfd);
 			if (maxfd < it->fd)
 				maxfd = it->fd;

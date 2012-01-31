@@ -7,8 +7,6 @@
 #include "connlist.h"
 #include "messages.h"
 
-#define BUF_SIZE 500
-
 void connection_handle(struct ConnectedSocket* it) {
 	int res;
 	conn_receive(it);
@@ -48,10 +46,8 @@ void connection_handle(struct ConnectedSocket* it) {
 				case CMD_CLOSE_PORT:
 					printf("Close port: %d\n", cmd_closeport->id);
 					connection = conn_from_id(cmd_closeport->id);
-					if (connection) {
-						close(connection->fd);
-						connection->fd = -1;
-					}
+					if (connection)
+						conn_close(it);
 					consumed = sizeof(struct CMD_ClosePort);
 					break;
 				case MSG_SOCKET_DATA:
@@ -81,7 +77,6 @@ void connection_handle(struct ConnectedSocket* it) {
 }
 
 int main(/*int argc, char *argv[]*/) {	
-	char buf[BUF_SIZE];
 	int sfd, j;
 	int len;
 	int nread;
@@ -105,6 +100,8 @@ int main(/*int argc, char *argv[]*/) {
 		struct ConnectedSocket* it = connected_sockets;
 		do {
 			if (!it) break;
+			if (sizeof(it->rxbuffer) <= it->rxlen)
+				continue;
 			FD_SET(it->fd, &rfd);
 			if (maxfd < it->fd)
 				maxfd = it->fd;

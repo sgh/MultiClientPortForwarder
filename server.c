@@ -24,6 +24,7 @@ void connection_accept(struct ConnectedSocket* it) {
 		server_socket = (struct ConnectedSocket*)malloc(sizeof(struct ConnectedSocket));
 		memset(server_socket, 0, sizeof(struct ConnectedSocket));
 		server_socket->fd = server_sockfd;
+		server_socket->port = 80;
 		server_socket->type = CONN_FORWARD_LISTEN;
 		server_socket->clientsock = new_socket;
 		connlist_add(server_socket);
@@ -35,7 +36,7 @@ void connection_accept(struct ConnectedSocket* it) {
 		new_socket->id = id_sequence;
 		struct CMD_ConnectPort cmd;
 		cmd.type = CMD_CONNECT_PORT;
-		cmd.port = 80;
+		cmd.port = it->port;
 		cmd.id = new_socket->id;
 		res = send(it->clientsock->fd, &cmd, sizeof(cmd), 0);
 		assert(res == sizeof(cmd));

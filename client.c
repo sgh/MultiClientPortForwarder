@@ -9,7 +9,8 @@
 
 void connection_handle(struct ConnectedSocket* it) {
 	int res;
-	conn_receive(it);
+	if (conn_receive(it))
+		return;
 
 	if (it->type == CONN_DAEMON) {
 		int consumed;
@@ -47,7 +48,7 @@ void connection_handle(struct ConnectedSocket* it) {
 					printf("Close port: %d\n", cmd_closeport->id);
 					connection = conn_from_id(cmd_closeport->id);
 					if (connection)
-						conn_close(it);
+						conn_close(connection);
 					consumed = sizeof(struct CMD_ClosePort);
 					break;
 				case MSG_SOCKET_DATA:
@@ -73,7 +74,7 @@ void connection_handle(struct ConnectedSocket* it) {
 	}
 	
 	/* Forward local socket data to the server */
-	conn_forward(it, it->rxbuffer, it->rxlen);
+	conn_forward(it);
 }
 
 int main(/*int argc, char *argv[]*/) {	
@@ -97,16 +98,19 @@ int main(/*int argc, char *argv[]*/) {
 		int maxfd = 0;
 
 		FD_ZERO(&rfd);
+// 		printf("Listen: ");
 		struct ConnectedSocket* it = connected_sockets;
 		do {
 			if (!it) break;
 			if (sizeof(it->rxbuffer) <= it->rxlen)
 				continue;
+// 			printf(" %d", it->fd);
 			FD_SET(it->fd, &rfd);
 			if (maxfd < it->fd)
 				maxfd = it->fd;
 			it = it->next;
 		} while (it != connected_sockets);
+// 		printf("\n");
 
 		tv.tv_usec = 0;
 		tv.tv_sec = 1;

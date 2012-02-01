@@ -104,27 +104,28 @@ int create_client_socket(const char* ip, const char* port) {
 	}
 
 	freeaddrinfo(result);           /* No longer needed */
-	printf("Create client socket\n");
+	printf("Create client socket fd:%d\n", sfd);
 	return sfd;
 }
 
 
 void conn_close(struct ConnectedSocket* it) {
-	printf("Closing id: %d\n", it->id);
+	printf("Closing id:%d fd:%d\n", it->id, it->fd);
 	close (it->fd);
 	it->fd = -1;
 }
 
 
-void conn_forward(struct ConnectedSocket* it, const char* buf, int len) {
+void conn_forward(struct ConnectedSocket* it) {
 	int res;
 	if (it->type == CONN_FORWARD) {
-		const char* ptr = buf;
+		const char* ptr = it->rxbuffer;
 		struct MSG_SocketData data;
 		data.type = MSG_SOCKET_DATA;
 		data.id = it->id;
-		while (it->rxlen) {
-			data.len = len<1024?len:1024;
+		while (1) {
+			data.len = it->rxlen<1024?it->rxlen:1024;
+			if (data.len == 0) break;
 			res = send(it->clientsock->fd, &data, sizeof(data), 0);
 			if (res == -1) {
 				conn_close(it);
@@ -143,21 +144,21 @@ void conn_forward(struct ConnectedSocket* it, const char* buf, int len) {
 		}
 		assert(it->rxlen == 0);
 	}
-	usleep(1000);
 }
 
-void conn_receive(struct ConnectedSocket* it) {
+int conn_receive(struct ConnectedSocket* it) {
 	int res;
 	assert( sizeof(it->rxbuffer) > it->rxlen );
 	int len = recv(it->fd, it->rxbuffer+it->rxlen, sizeof(it->rxbuffer) - it->rxlen, MSG_DONTWAIT);
-	if (len == 0) {
-		printf("Socket disconnected\n");
+	if (len == 0 || len == -1) {
+		printf("Socket disconnected fd:%d\n", it->fd);
 		close(it->fd);
 		it->fd = -1;
-		return;
+		return -1;
 	}
 	it->rxlen += len;
-// 	printf("Received %d bytes on fd:%d type:%d\n", len, it->fd, it->type);
+// 	printf("Received %d bytes on fd:%d type:%d id:%d\n", len, it->fd, it->type, it->id);
+	return 0;
 }
 
 

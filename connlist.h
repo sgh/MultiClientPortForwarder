@@ -39,8 +39,8 @@ void connlist_add(struct ConnectedSocket* new_conn);
 
 int create_server_socket(const char* port);
 int create_client_socket(const char* ip, const char* port);
-void conn_forward(struct ConnectedSocket* it, const char* buf, int len);
-void conn_receive(struct ConnectedSocket* it);
+void conn_forward(struct ConnectedSocket* it);
+int conn_receive(struct ConnectedSocket* it);
 void conn_close(struct ConnectedSocket* it);
 
 struct ConnectedSocket* conn_from_id(unsigned short id);

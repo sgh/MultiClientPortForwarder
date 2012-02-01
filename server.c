@@ -37,9 +37,10 @@ void connection_accept(struct ConnectedSocket* it) {
 		cmd.type = CMD_CONNECT_PORT;
 		cmd.port = 80;
 		cmd.id = new_socket->id;
-		id_sequence++;
 		res = send(it->clientsock->fd, &cmd, sizeof(cmd), 0);
 		assert(res == sizeof(cmd));
+		id_sequence++;
+		printf("CMD_CONNECT_PORT id:%d\n", cmd.id);
 	}
 	connlist_add(new_socket);
 }
@@ -90,12 +91,13 @@ void connection_handle(struct ConnectedSocket* it) {
 	}
 
 	/* Forward local socket data over the channel to the client */
-	conn_forward(it, it->rxbuffer, it->rxlen);
+	conn_forward(it);
 	
 	if (it->fd == -1 && it->type == CONN_FORWARD) {
 		struct CMD_ClosePort cmd;
 		cmd.type = CMD_CLOSE_PORT;
 		cmd.id = it->id;
+		printf("Send closeport %d\n", cmd.id);
 		res = send(it->clientsock->fd, &cmd, sizeof(cmd), 0);
 		assert(res == -1 || res == sizeof(cmd));
 	}

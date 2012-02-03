@@ -95,7 +95,7 @@ int main(/*int argc, char *argv[]*/) {
 	connlist_add(new_socket);
 	
 	while (1) {
-		int maxfd = 0;
+		int maxfd = -1;
 
 		FD_ZERO(&rfd);
 // 		printf("Listen: ");
@@ -111,6 +111,9 @@ int main(/*int argc, char *argv[]*/) {
 			it = it->next;
 		} while (it != connected_sockets);
 // 		printf("\n");
+
+		if (maxfd == -1)
+			break;
 
 		tv.tv_usec = 0;
 		tv.tv_sec = 1;

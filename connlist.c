@@ -109,54 +109,54 @@ int create_client_socket(const char* ip, const char* port) {
 }
 
 
-void conn_close(struct ConnectedSocket* it) {
-	printf("Closing id:%d fd:%d\n", it->id, it->fd);
-	close (it->fd);
-	it->fd = -1;
+void conn_close(struct ConnectedSocket* con) {
+	printf("Closing id:%d fd:%d\n", con->id, con->fd);
+	close (con->fd);
+	con->fd = -1;
 }
 
 
-void conn_forward(struct ConnectedSocket* it) {
+void conn_forward(struct ConnectedSocket* con) {
 	int res;
-	if (it->type == CONN_FORWARD) {
-		const char* ptr = it->rxbuffer;
+	if (con->type == CONN_FORWARD) {
+		const char* ptr = con->rxbuffer;
 		struct MSG_SocketData data;
 		data.type = MSG_SOCKET_DATA;
-		data.id = it->id;
+		data.id = con->id;
 		while (1) {
-			data.len = it->rxlen<1024?it->rxlen:1024;
+			data.len = con->rxlen<1024?con->rxlen:1024;
 			if (data.len == 0) break;
-			res = send(it->clientsock->fd, &data, sizeof(data), 0);
+			res = send(con->clientserver_connection->fd, &data, sizeof(data), 0);
 			if (res == -1) {
-				conn_close(it);
+				conn_close(con);
 				return;
 			}
 			assert(res == sizeof(data));
-			res = send(it->clientsock->fd, ptr, data.len, 0);
+			res = send(con->clientserver_connection->fd, ptr, data.len, 0);
 			if (res == -1) {
-				conn_close(it);
+				conn_close(con);
 				return;
 			}
-// 			printf("Forward data id:%d %d bytes (%d bytes payload)\n", data.id, res, len);
+			if (data.len < 500)
+				printf("Forward data id:%d %d bytes (%d bytes payload)\n", data.id, res, data.len);
 			assert(res == data.len);
-			it->rxlen -= data.len;
+			con->rxlen -= data.len;
 			ptr += data.len;
 		}
-		assert(it->rxlen == 0);
+		assert(con->rxlen == 0);
 	}
 }
 
-int conn_receive(struct ConnectedSocket* it) {
-	int res;
-	assert( sizeof(it->rxbuffer) > it->rxlen );
-	int len = recv(it->fd, it->rxbuffer+it->rxlen, sizeof(it->rxbuffer) - it->rxlen, MSG_DONTWAIT);
+int conn_receive(struct ConnectedSocket* con) {
+	assert( sizeof(con->rxbuffer) > con->rxlen );
+	int len = recv(con->fd, con->rxbuffer+con->rxlen, sizeof(con->rxbuffer) - con->rxlen, MSG_DONTWAIT);
 	if (len == 0 || len == -1) {
-		printf("Socket disconnected fd:%d\n", it->fd);
-		close(it->fd);
-		it->fd = -1;
+		printf("Socket disconnected fd:%d\n", con->fd);
+		close(con->fd);
+		con->fd = -1;
 		return -1;
 	}
-	it->rxlen += len;
+	con->rxlen += len;
 // 	printf("Received %d bytes on fd:%d type:%d id:%d\n", len, it->fd, it->type, it->id);
 	return 0;
 }
@@ -164,14 +164,30 @@ int conn_receive(struct ConnectedSocket* it) {
 
 
 struct ConnectedSocket* conn_from_id(unsigned short id) {
-	struct ConnectedSocket* it = connected_sockets;
+	struct ConnectedSocket* con = connected_sockets;
 	do {
-		if (!it) break;
+		if (!con) break;
 		
-		if (it->id == id)
-			return it;
-		it = it->next;
-	} while (it != connected_sockets);
+		if (con->id == id)
+			return con;
+		con = con->next;
+	} while (con != connected_sockets);
 	printf("Failed to lookup id %d\n", id);
 	return NULL;
+}
+
+
+int conn_socket_data(struct ConnectedSocket* con) {
+	int res;
+	struct MSG_SocketData* msg_socketdata = (struct MSG_SocketData*)con->rxbuffer;
+	if (msg_socketdata->len < 500)
+		printf("Socket data %d bytes (%d bytes payload)\n", con->rxlen, msg_socketdata->len);
+	if (con->rxlen < msg_socketdata->len + sizeof(struct MSG_SocketData))
+		return 0;
+	struct ConnectedSocket* connection = conn_from_id(msg_socketdata->id);
+	if (connection) {
+		res = send(connection->fd, con->rxbuffer+sizeof(struct MSG_SocketData), msg_socketdata->len, 0);
+		assert(res == -1 || res == msg_socketdata->len);
+	}
+	return msg_socketdata->len + sizeof(struct MSG_SocketData);
 }

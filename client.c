@@ -7,22 +7,22 @@
 #include "connlist.h"
 #include "messages.h"
 
-void connection_handle(struct ConnectedSocket* it) {
+void connection_handle(struct ConnectedSocket* con) {
 	int res;
-	if (conn_receive(it))
+	if (conn_receive(con))
 		return;
 
-	if (it->type == CONN_DAEMON) {
+	if (con->type == CONN_DAEMON) {
 		int consumed;
-		struct CMD_ConnectPort* cmd_connectport = it->rxbuffer;
-		struct CMD_ClosePort*   cmd_closeport   = it->rxbuffer;
-		struct MSG_SocketData*  msg_socketdata  = it->rxbuffer;
+		struct CMD_ConnectPort* cmd_connectport = con->rxbuffer;
+		struct CMD_ClosePort*   cmd_closeport   = con->rxbuffer;
+		struct MSG_SocketData*  msg_socketdata  = con->rxbuffer;
 		
 		do {
 			consumed = 0;
 			struct ConnectedSocket* connection;
 			struct MSG_AckConnectPort ack;
-			switch (it->rxbuffer[0]) {
+			switch (con->rxbuffer[0]) {
 				case CMD_CONNECT_PORT:
 					printf("Connect id:%d to port: %d\n", cmd_connectport->id, cmd_connectport->port);
 					ack.type = MSG_ACK_CONNECT_PORT;
@@ -36,11 +36,11 @@ void connection_handle(struct ConnectedSocket* it) {
 					memset(client_socket, 0, sizeof(struct ConnectedSocket));
 					client_socket->fd = sockfd;
 					client_socket->type = CONN_FORWARD;
-					client_socket->clientsock = it;
+					client_socket->clientserver_connection = con;
 					client_socket->id = cmd_connectport->id;
 					connlist_add(client_socket);
 
-					res = send(client_socket->clientsock->fd, &ack, sizeof(ack), 0);
+					res = send(client_socket->clientserver_connection->fd, &ack, sizeof(ack), 0);
 					assert(res == sizeof(ack));
 					consumed = sizeof(struct CMD_ConnectPort);
 					break;
@@ -52,32 +52,24 @@ void connection_handle(struct ConnectedSocket* it) {
 					consumed = sizeof(struct CMD_ClosePort);
 					break;
 				case MSG_SOCKET_DATA:
-// 					printf("Socket data %d bytes (%d bytes payload)\n", it->rxlen, msg_socketdata->len);
-					if (it->rxlen < msg_socketdata->len + sizeof(struct MSG_SocketData))
-						break;
-					connection = conn_from_id(msg_socketdata->id);
-					if (connection) {
-						res = send(connection->fd, it->rxbuffer+sizeof(struct MSG_SocketData), msg_socketdata->len, 0);
-						assert(res == msg_socketdata->len);
-					}
-					consumed = msg_socketdata->len + sizeof(struct MSG_SocketData);
+					consumed = conn_socket_data(con);
 					break;
 				default:
 					printf("Invalid package\n");
 					break;
 			}
 			if (consumed) {
-				memmove(it->rxbuffer, it->rxbuffer + consumed, it->rxlen - consumed);
-				it->rxlen -= consumed;
+				memmove(con->rxbuffer, con->rxbuffer + consumed, con->rxlen - consumed);
+				con->rxlen -= consumed;
 			}
-		} while (consumed && it->rxlen);
+		} while (consumed && con->rxlen);
 	}
 	
 	/* Forward local socket data to the server */
-	conn_forward(it);
+	conn_forward(con);
 }
 
-int main(/*int argc, char *argv[]*/) {	
+int main(int argc, char *argv[]) {
 	int sfd, j;
 	int len;
 	int nread;
@@ -93,7 +85,15 @@ int main(/*int argc, char *argv[]*/) {
 	new_socket->fd = sfd;
 	new_socket->type = CONN_DAEMON;
 	connlist_add(new_socket);
-	
+
+	if (argc > 1) {
+		struct MSG_IdentifyConnection identify;
+		identify.type = MSG_INDENTIFY_CONNECTION;
+		identify.len = strlen(argv[1]) + sizeof(identify);
+		send(sfd, &identify, sizeof(identify), 0);
+		send(sfd, argv[1], strlen(argv[1]), 0);
+	}
+
 	while (1) {
 		int maxfd = -1;
 

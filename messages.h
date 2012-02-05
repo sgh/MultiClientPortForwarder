@@ -34,4 +34,13 @@ struct MSG_SocketData {
 	/* data */
 };
 
+/* Indentify connection name */
+#define MSG_INDENTIFY_CONNECTION   0x14
+struct MSG_IdentifyConnection {
+	char type;
+	unsigned int id;
+	unsigned short len;
+	/* data, string */
+};
+
 #endif

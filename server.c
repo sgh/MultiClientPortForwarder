@@ -9,97 +9,112 @@
 
 unsigned int id_sequence = 1;
 
-void connection_accept(struct ConnectedSocket* it) {
+void connection_accept(struct ConnectedSocket* con) {
 	int res;
-	struct ConnectedSocket* new_socket = (struct ConnectedSocket*)malloc(sizeof(struct ConnectedSocket));
-	memset(new_socket, 0, sizeof(struct ConnectedSocket));
-	new_socket->fd = accept(it->fd, NULL, NULL);
-	if (it->type == CONN_DAEMON_LISTEN) {
+	struct ConnectedSocket* new_connection = (struct ConnectedSocket*)malloc(sizeof(struct ConnectedSocket));
+	memset(new_connection, 0, sizeof(struct ConnectedSocket));
+	new_connection->fd = accept(con->fd, NULL, NULL);
+	if (con->type == CONN_DAEMON_LISTEN) {
 		printf("CONN_DAEMON_LISTEN\n");
-		new_socket->type = CONN_DAEMON;
-		
-		int server_sockfd;
-		struct ConnectedSocket* server_socket ;
-		server_sockfd = create_server_socket("8080");
-		server_socket = (struct ConnectedSocket*)malloc(sizeof(struct ConnectedSocket));
-		memset(server_socket, 0, sizeof(struct ConnectedSocket));
-		server_socket->fd = server_sockfd;
-		server_socket->port = 80;
-		server_socket->type = CONN_FORWARD_LISTEN;
-		server_socket->clientsock = new_socket;
-		connlist_add(server_socket);
+		new_connection->type = CONN_DAEMON;
 	}
-	if (it->type == CONN_FORWARD_LISTEN) {
+	if (con->type == CONN_FORWARD_LISTEN) {
 		printf("Accept CONN_FORWARD_LISTEN\n");
-		new_socket->type = CONN_FORWARD;
-		new_socket->clientsock = it->clientsock;
-		new_socket->id = id_sequence;
+		new_connection->type = CONN_FORWARD;
+		new_connection->clientserver_connection = con->clientserver_connection;
+		new_connection->id = id_sequence;
 		struct CMD_ConnectPort cmd;
 		cmd.type = CMD_CONNECT_PORT;
-		cmd.port = it->port;
-		cmd.id = new_socket->id;
-		res = send(it->clientsock->fd, &cmd, sizeof(cmd), 0);
+		cmd.port = con->port;
+		cmd.id = new_connection->id;
+		res = send(con->clientserver_connection->fd, &cmd, sizeof(cmd), 0);
 		assert(res == sizeof(cmd));
 		id_sequence++;
 		printf("CMD_CONNECT_PORT id:%d\n", cmd.id);
 	}
-	connlist_add(new_socket);
+	connlist_add(new_connection);
 }
 
-void connection_handle(struct ConnectedSocket* it) {
-	conn_receive(it);
+void connection_handle(struct ConnectedSocket* con) {
+	if (conn_receive(con) == -1)
+		return;
 
 	int res;
-	struct MSG_AckConnectPort* ack = it->rxbuffer;
-	struct MSG_SocketData* msg_socketdata = it->rxbuffer;
+	struct MSG_AckConnectPort* ack = con->rxbuffer;
 
-	if (it->type == CONN_DAEMON) {
+	if (con->type == CONN_DAEMON) {
 		int consumed;
+		struct MSG_IdentifyConnection* identify = con->rxbuffer;
 		do {
 			consumed = 0;
-			switch (it->rxbuffer[0]) {
+			switch (con->rxbuffer[0]) {
 				case MSG_ACK_CONNECT_PORT:
 					printf("Ack connect port: %d\n", ack->id);
 					consumed = sizeof(struct MSG_AckConnectPort);
 					break;
 				case MSG_SOCKET_DATA:
-// 					printf("Socket data %d bytes (%d bytes payload)\n", it->rxlen, msg_socketdata->len);
-					if (it->rxlen < msg_socketdata->len + sizeof(struct MSG_SocketData))
-						break;
-					struct ConnectedSocket* connection = conn_from_id(msg_socketdata->id);
-					if (connection) {
-						res = send(connection->fd, it->rxbuffer+sizeof(struct MSG_SocketData), msg_socketdata->len, 0);
-						if (res == -1) {
-							conn_close(it);
-							break;
-						}
-						assert(res == -1 || res == msg_socketdata->len);
-					}
-					consumed = msg_socketdata->len + sizeof(struct MSG_SocketData);
+					consumed = conn_socket_data(con);
 					break;
+				case MSG_INDENTIFY_CONNECTION: {
+					int bufsize = identify->len - sizeof(struct MSG_IdentifyConnection) + 1;
+					printf("bufsize:%d\n", bufsize);
+					con->name = malloc(bufsize);
+					memset(con->name, 0, bufsize);
+					memcpy(con->name, (char*)identify + sizeof(struct MSG_IdentifyConnection), bufsize-1);
+					printf("len:%d \"%s\"\n", identify->len, con->name);
+					consumed = identify->len;
+
+					int server_sockfd;
+					struct ConnectedSocket* server_socket ;
+
+					if (strcmp(con->name, "CLIENT1") == 0) {
+						server_sockfd = create_server_socket("8080");
+						server_socket = (struct ConnectedSocket*)malloc(sizeof(struct ConnectedSocket));
+						memset(server_socket, 0, sizeof(struct ConnectedSocket));
+						server_socket->fd = server_sockfd;
+						server_socket->port = 80;
+						server_socket->type = CONN_FORWARD_LISTEN;
+						server_socket->clientserver_connection = con;
+						connlist_add(server_socket);
+					}
+
+					if (strcmp(con->name, "CLIENT2") == 0) {
+						server_sockfd = create_server_socket("2222");
+						server_socket = (struct ConnectedSocket*)malloc(sizeof(struct ConnectedSocket));
+						memset(server_socket, 0, sizeof(struct ConnectedSocket));
+						server_socket->fd = server_sockfd;
+						server_socket->port = 22;
+						server_socket->type = CONN_FORWARD_LISTEN;
+						server_socket->clientserver_connection = con;
+						connlist_add(server_socket);
+					}
+
+
+					break;
+				}
 				default:
 					printf("Invalid package\n");
 					break;
 			}
 			if (consumed) {
-				memmove(it->rxbuffer, it->rxbuffer + consumed, it->rxlen - consumed);
-				it->rxlen -= consumed;
+				memmove(con->rxbuffer, con->rxbuffer + consumed, con->rxlen - consumed);
+				con->rxlen -= consumed;
 // 				printf("Consumed %d\n", consumed);
 			}
-		} while (consumed && it->rxlen);
+		} while (consumed && con->rxlen);
 // 		if (it->rxlen)
 // 			printf("Left with %d pending bytes\n", it->rxlen);
 	}
 
 	/* Forward local socket data over the channel to the client */
-	conn_forward(it);
+	conn_forward(con);
 	
-	if (it->fd == -1 && it->type == CONN_FORWARD) {
+	if (con->fd == -1 && con->type == CONN_FORWARD) {
 		struct CMD_ClosePort cmd;
 		cmd.type = CMD_CLOSE_PORT;
-		cmd.id = it->id;
+		cmd.id = con->id;
 		printf("Send closeport %d\n", cmd.id);
-		res = send(it->clientsock->fd, &cmd, sizeof(cmd), 0);
+		res = send(con->clientserver_connection->fd, &cmd, sizeof(cmd), 0);
 		assert(res == -1 || res == sizeof(cmd));
 	}
 }
@@ -120,46 +135,46 @@ int main() {
 		int maxfd = 0;
 
 		FD_ZERO(&rfd);
-		struct ConnectedSocket* it = connected_sockets;
+		struct ConnectedSocket* con = connected_sockets;
 		do {
-			if (!it) break;
-			if (sizeof(it->rxbuffer) <= it->rxlen)
+			if (!con) break;
+			if (sizeof(con->rxbuffer) <= con->rxlen)
 				continue;
-			FD_SET(it->fd, &rfd);
-			if (maxfd < it->fd)
-				maxfd = it->fd;
-			it = it->next;
-		} while (it != connected_sockets);
+			FD_SET(con->fd, &rfd);
+			if (maxfd < con->fd)
+				maxfd = con->fd;
+			con = con->next;
+		} while (con != connected_sockets);
 
 		tv.tv_usec = 0;
 		tv.tv_sec = 1;
 		if (select(maxfd+1, &rfd, NULL, NULL, &tv) > 0) {
 
-			it = connected_sockets;
+			con = connected_sockets;
 			do {
-				if (!it)
+				if (!con)
 					break;
-				if (FD_ISSET(it->fd, &rfd)) {
-					switch (it->type) {
+				if (FD_ISSET(con->fd, &rfd)) {
+					switch (con->type) {
 						case CONN_DAEMON_LISTEN:
 						case CONN_FORWARD_LISTEN:
-							connection_accept(it);
+							connection_accept(con);
 							break;
 						case CONN_DAEMON:
 						case CONN_FORWARD:
-							connection_handle(it);
+							connection_handle(con);
 							break;
 					}
 							
 				}
 
-				if (it->fd == -1) {
-					struct ConnectedSocket* tmp = it;
-					it = it->prev;
+				if (con->fd == -1) {
+					struct ConnectedSocket* tmp = con;
+					con = con->prev;
 					connlist_delete(tmp);
 				}
-				it = it->next;
-			} while (it != connected_sockets);
+				con = con->next;
+			} while (con != connected_sockets);
 
 		} else
 			printf("tick\n");

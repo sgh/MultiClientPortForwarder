@@ -13,10 +13,9 @@ void connection_handle(struct ConnectedSocket* con) {
 		return;
 
 	if (con->type == CONN_DAEMON) {
-		int consumed;
-		struct CMD_ConnectPort* cmd_connectport = con->rxbuffer;
-		struct CMD_ClosePort*   cmd_closeport   = con->rxbuffer;
-		struct MSG_SocketData*  msg_socketdata  = con->rxbuffer;
+		size_t consumed;
+		struct CMD_ConnectPort* cmd_connectport = (struct CMD_ConnectPort*)con->rxbuffer;
+		struct CMD_ClosePort*   cmd_closeport   = (struct CMD_ClosePort*)con->rxbuffer;
 		
 		do {
 			consumed = 0;
@@ -70,16 +69,12 @@ void connection_handle(struct ConnectedSocket* con) {
 }
 
 int main(int argc, char *argv[]) {
-	int sfd, j;
-	int len;
-	int nread;
+	int sfd;
 	fd_set rfd;
 	struct timeval tv;
 
 	sfd = create_client_socket("127.0.0.1", "12345");
-	/* Send remaining command-line arguments as separate
-	datagrams, and read responses from server */
-	
+
 	struct ConnectedSocket* new_socket = (struct ConnectedSocket*)malloc(sizeof(struct ConnectedSocket));
 	memset(new_socket, 0, sizeof(struct ConnectedSocket));
 	new_socket->fd = sfd;
@@ -88,7 +83,7 @@ int main(int argc, char *argv[]) {
 
 	if (argc > 1) {
 		struct MSG_IdentifyConnection identify;
-		identify.type = MSG_INDENTIFY_CONNECTION;
+		identify.type = MSG_IDENTIFY_CONNECTION;
 		identify.len = strlen(argv[1]) + sizeof(identify);
 		send(sfd, &identify, sizeof(identify), 0);
 		send(sfd, argv[1], strlen(argv[1]), 0);
@@ -141,8 +136,8 @@ int main(int argc, char *argv[]) {
 				it = it->next;
 			} while (it != connected_sockets);
 
-		} else
-			printf("client tick\n");
+		} //else
+// 			printf("client tick\n");
 	}
 	
 	exit(EXIT_SUCCESS);

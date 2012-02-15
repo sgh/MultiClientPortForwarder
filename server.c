@@ -40,11 +40,11 @@ void connection_handle(struct ConnectedSocket* con) {
 		return;
 
 	int res;
-	struct MSG_AckConnectPort* ack = con->rxbuffer;
+	struct MSG_AckConnectPort* ack = (struct MSG_AckConnectPort*)con->rxbuffer;
 
 	if (con->type == CONN_DAEMON) {
 		int consumed;
-		struct MSG_IdentifyConnection* identify = con->rxbuffer;
+		struct MSG_IdentifyConnection* identify = (struct MSG_IdentifyConnection*)con->rxbuffer;
 		do {
 			consumed = 0;
 			switch (con->rxbuffer[0]) {
@@ -55,8 +55,10 @@ void connection_handle(struct ConnectedSocket* con) {
 				case MSG_SOCKET_DATA:
 					consumed = conn_socket_data(con);
 					break;
-				case MSG_INDENTIFY_CONNECTION: {
+				case MSG_IDENTIFY_CONNECTION: {
 					int bufsize = identify->len - sizeof(struct MSG_IdentifyConnection) + 1;
+                                        if (con->rxlen < identify->len)
+                                                break;
 					printf("bufsize:%d\n", bufsize);
 					con->name = malloc(bufsize);
 					memset(con->name, 0, bufsize);
@@ -97,7 +99,8 @@ void connection_handle(struct ConnectedSocket* con) {
 					break;
 			}
 			if (consumed) {
-				memmove(con->rxbuffer, con->rxbuffer + consumed, con->rxlen - consumed);
+                                assert( consumed <= con->rxlen );
+                                memmove(con->rxbuffer, con->rxbuffer + consumed, con->rxlen - consumed);
 				con->rxlen -= consumed;
 // 				printf("Consumed %d\n", consumed);
 			}
@@ -176,7 +179,7 @@ int main() {
 				con = con->next;
 			} while (con != connected_sockets);
 
-		} else
-			printf("tick\n");
+		} //else
+// 			printf("tick\n");
 	}
 }

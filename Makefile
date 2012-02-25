@@ -3,9 +3,9 @@ CFLAGS=-Wall -Wextra -O0 -g
 
 all: server client
 
-server: connlist.c connlist.h server.c messages.h
+server: connlist.cpp connlist.h server.cpp messages.h
 
-client: connlist.c connlist.h client.c messages.h
+client: connlist.cpp connlist.h client.cpp messages.h
 
 clean:
 	rm -f client

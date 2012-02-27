@@ -1,5 +1,6 @@
 
 CFLAGS=-Wall -Wextra -O0 -g
+CXXFLAGS=-Wall -Wextra -O0 -g
 
 all: server client
 

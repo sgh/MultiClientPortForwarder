@@ -7,8 +7,13 @@
 #include <sys/socket.h>
 #include <errno.h>
 #include <netdb.h>
+// 	struct ConnectedSocket* next;
+// 	struct ConnectedSocket* prev;
 
+#include <vector>
+#include <string>
 
+#define CONN_DAEMON_NONE    0
 #define CONN_DAEMON_LISTEN  1
 #define CONN_DAEMON         2
 #define CONN_FORWARD_LISTEN 3
@@ -17,8 +22,15 @@
 
 struct ConnectedSocket;
 struct ConnectedSocket {
-	struct ConnectedSocket* next;
-	struct ConnectedSocket* prev;
+	ConnectedSocket() {
+		fd = -1;
+		type = CONN_DAEMON_NONE;
+		rxlen = 0;
+		id = 0;
+		port = 0;
+		client_fd = 0;
+		pending_delete = false;
+	}
 	int    fd;
 	char   type;
 
@@ -26,25 +38,27 @@ struct ConnectedSocket {
 	unsigned short rxlen;
 	
 	unsigned short id;
-	char*  name;
+	std::string  name;
 	
 	/* FORWARD sockets */
 	unsigned short port;
-	struct ConnectedSocket* clientserver_connection;
+	int client_fd;
+	bool pending_delete;
 	
 };
 
-extern struct ConnectedSocket* connected_sockets;
+extern std::vector<ConnectedSocket> connected_sockets;
 
-void connlist_delete(struct ConnectedSocket* con);
-void connlist_add(struct ConnectedSocket* new_conn);
+std::vector<ConnectedSocket>::iterator connlist_begin();
+void connlist_delete(ConnectedSocket& con);
+void connlist_add(ConnectedSocket& new_conn);
 
 int create_server_socket(const char* port);
 int create_client_socket(const char* ip, const char* port);
-void conn_forward(struct ConnectedSocket* con);
-int conn_receive(struct ConnectedSocket* con);
-void conn_close(struct ConnectedSocket* con);
-int conn_socket_data(struct ConnectedSocket* con);
+void conn_forward(ConnectedSocket& con);
+int conn_receive(ConnectedSocket& con);
+void conn_close(ConnectedSocket& con);
+int conn_socket_data(ConnectedSocket& con);
 
-struct ConnectedSocket* conn_from_id(unsigned short id);
+ConnectedSocket& conn_from_id(unsigned short id);
 #endif

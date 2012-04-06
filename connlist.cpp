@@ -9,35 +9,62 @@
 
 #include "connlist.h"
 
-std::vector<ConnectedSocket> connected_sockets;
+std::vector<ConnectedSocket*> connected_sockets;
 
-std::vector<ConnectedSocket> connected_sockets_to_be_added;
+std::vector<ConnectedSocket*> connected_sockets_to_be_added;
 
 
-void connlist_add(ConnectedSocket& new_conn) {
+unsigned int id_sequence = 1;
+
+void connection_accept(ConnectedSocket* pcon) {
+	ConnectedSocket& con = *pcon;
+// 	int res;
+	int acceptedfd;
+	acceptedfd = accept(con.fd, NULL, NULL);
+	if (con.type == CONN_DAEMON_LISTEN) {
+		printf("CONN_DAEMON_LISTEN\n");
+		new DaemonSocket(acceptedfd);
+	}
+	if (con.type == CONN_FORWARD_LISTEN) {
+		printf("Accept CONN_FORWARD_LISTEN\n");
+		ForwardSocket* new_forwardconnection;
+		new_forwardconnection = new ForwardSocket(acceptedfd);
+// 		new_forwardconnection->client_fd = con.client_fd;
+		new_forwardconnection->parent = con.parent;
+		new_forwardconnection->id = id_sequence;
+		struct CMD_ConnectPort cmd;
+		cmd.type = CMD_CONNECT_PORT;
+		cmd.port = con.port;
+		cmd.id = new_forwardconnection->id;
+// 		new_forwardconnection->client_fd = con.client_fd;
+// 		assert(res == sizeof(cmd));
+		con.parent->txfifo.in( (unsigned char*)&cmd, sizeof(cmd) );
+		id_sequence++;
+		printf("CMD_CONNECT_PORT id:%d\n", cmd.id);
+	}
+}
+
+void connlist_add(ConnectedSocket* new_conn) {
 	connected_sockets_to_be_added.push_back(new_conn);
-	std::cout << "Added connection - fd:" << new_conn.fd << ". New size is " << connected_sockets.size() << std::endl;
+	std::cout << "Added connection - fd:" << new_conn->fd << ". New size is " << connected_sockets_to_be_added.size() << std::endl;
 }
 
-void connlist_delete(ConnectedSocket& con) {
-	con.pending_delete = true;
-}
+std::vector<ConnectedSocket*>::iterator connlist_begin() {
 
-std::vector<ConnectedSocket>::iterator connlist_begin() {
-
-	std::vector<ConnectedSocket>::iterator it = connected_sockets.begin();
+	std::vector<ConnectedSocket*>::iterator it = connected_sockets.begin();
 	while (it != connected_sockets.end()) {
-		if ((*it).pending_delete) {
-			std::vector<ConnectedSocket>::iterator tmp = it;
+		if ((*it)->pending_delete) {
+			std::vector<ConnectedSocket*>::iterator tmp = it;
 			it--;
 			connected_sockets.erase(tmp);
 		}
 
-		it ++;
+		it++;
 	}
 
 	if (connected_sockets_to_be_added.size() > 0) {
 		connected_sockets.insert(connected_sockets.end(), connected_sockets_to_be_added.begin(), connected_sockets_to_be_added.end());
+		std::cout << "Realy added connection. New size is " << connected_sockets.size() << std::endl;
 		connected_sockets_to_be_added.clear();
 	}
 
@@ -126,68 +153,51 @@ int create_client_socket(const char* ip, const char* port) {
 }
 
 
-void conn_close(ConnectedSocket& con) {
-	printf("Closing id:%d fd:%d\n", con.id, con.fd);
-	close (con.fd);
-	con.fd = -1;
-	connlist_delete(con);
-}
 
 
 void conn_forward(ConnectedSocket& con) {
-	int res;
-	if (con.type == CONN_FORWARD) {
-		const char* ptr = con.rxbuffer;
-		struct MSG_SocketData data;
-		data.type = MSG_SOCKET_DATA;
-		data.id = con.id;
-		while (1) {
-			data.len = con.rxlen<1024?con.rxlen:1024;
-			if (data.len == 0)
-				break;
-			printf("send to fd:%d\n", con.client_fd);
-			res = send(con.client_fd, &data, sizeof(data), 0);
-			if (res == -1) {
-				conn_close(con);
-				return;
-			}
-			assert(res == sizeof(data));
-			res = send(con.client_fd, ptr, data.len, 0);
-			if (res == -1) {
-				conn_close(con);
-				return;
-			}
-			if (data.len < 500)
-				printf("Forward data id:%d %d bytes (%d bytes payload)\n", data.id, res, data.len);
-			assert(res == data.len);
-			con.rxlen -= data.len;
-			ptr += data.len;
-		}
-		assert(con.rxlen == 0);
-	}
-}
+// 	int res;
 
-int conn_receive(struct ConnectedSocket& con) {
-	assert( sizeof(con.rxbuffer) > con.rxlen );
-	int len = recv(con.fd, con.rxbuffer+con.rxlen, sizeof(con.rxbuffer) - con.rxlen, MSG_DONTWAIT);
-	if (len == 0 || len == -1) {
-		printf("Socket disconnected fd:%d\n", con.fd);
-		conn_close(con);
-		return -1;
+	const unsigned char* ptr = con.rxfifo._data;
+	struct MSG_SocketData data;
+	data.type = MSG_SOCKET_DATA;
+	data.id = con.id;
+	while (1) {
+		data.len = con.rxfifo._len;
+		if (data.len > 1024)
+			data.len = 1024;
+		if (data.len == 0)
+			break;
+// 		printf("send to fd:%d\n", con.client_fd);
+// 		res = send(con.client_fd, &data, sizeof(data), 0);
+		con.parent->txfifo.in( (unsigned char*)&data, sizeof(data) );
+// 		if (res == -1) {
+// 			con.conn_close();
+// 			return;
+// 		}
+// 		assert(res == sizeof(data));
+// 		res = send(con.client_fd, ptr, data.len, 0);
+		con.parent->txfifo.in( ptr, data.len );
+// 		if (res == -1) {
+// 			con.conn_close();
+// 			return;
+// 		}
+		if (data.len < 500)
+			printf("SOCKET->MUX: id:%d %d bytes payload\n", data.id, data.len);
+// 		assert(res == data.len);
+		con.rxfifo.skip(data.len);
+		ptr += data.len;
 	}
-	con.rxlen += len;
-// 	printf("Received %d bytes on fd:%d type:%d id:%d\n", len, it->fd, it->type, it->id);
-	return 0;
+	assert(con.rxfifo._len == 0);
 }
-
 
 
 ConnectedSocket& conn_from_id(unsigned short id) {
-	std::vector<ConnectedSocket>::iterator it = connected_sockets.begin();
+	std::vector<ConnectedSocket*>::iterator it = connected_sockets.begin();
 	while (it != connected_sockets.end()) {
 		
-		if ((*it).id == id)
-			return (*it);
+		if ((*it)->id == id)
+			return *(*it);
 		it++;
 	}
 	printf("Failed to lookup id %d\n", id);
@@ -195,15 +205,76 @@ ConnectedSocket& conn_from_id(unsigned short id) {
 }
 
 
-int conn_socket_data(ConnectedSocket& con) {
+void conn_socket_data(ConnectedSocket& con) {
 	int res;
-	struct MSG_SocketData* msg_socketdata = (struct MSG_SocketData*)con.rxbuffer;
-	if (con.rxlen < msg_socketdata->len + sizeof(struct MSG_SocketData))
-		return 0;
+	struct MSG_SocketData* msg_socketdata = (struct MSG_SocketData*)con.rxfifo._data;
+	int total_len = msg_socketdata->len + sizeof(struct MSG_SocketData);
+	if (con.rxfifo._len < total_len)
+		return;
 	if (msg_socketdata->len < 500)
-		printf("Socket data %d bytes (%d bytes payload)\n", con.rxlen, msg_socketdata->len);
+		printf("MUX->SOCKET: data %d bytes (%d bytes payload)\n", con.rxfifo._len, msg_socketdata->len);
 	ConnectedSocket& connection = conn_from_id(msg_socketdata->id);
-	res = send(connection.fd, con.rxbuffer+sizeof(struct MSG_SocketData), msg_socketdata->len, 0);
+	res = connection.txfifo.in( con.rxfifo._data+sizeof(struct MSG_SocketData), msg_socketdata->len);
 	assert(res == -1 || res == msg_socketdata->len);
-	return msg_socketdata->len + sizeof(struct MSG_SocketData);
+	con.rxfifo.skip(total_len);
+}
+
+void eventloop() {
+	fd_set rfd;
+	fd_set wfd;
+	struct timeval tv;
+
+	while (1) {
+		int maxfd = 0;
+
+		FD_ZERO(&rfd);
+		FD_ZERO(&wfd);
+		std::vector<ConnectedSocket*>::iterator it = connlist_begin();
+		while (it != connected_sockets.end()) {
+			ConnectedSocket& con = **it;
+			if (con.rxfifo.free()) {
+				FD_SET(con.fd, &rfd);
+				if (maxfd < con.fd)
+					maxfd = con.fd;
+			}
+			if (con.txfifo._len) {
+				FD_SET(con.fd, &wfd);
+				if (maxfd < con.fd)
+					maxfd = con.fd;
+			}
+
+			it++;
+		}
+
+
+
+
+		tv.tv_usec = 0;
+		tv.tv_sec = 1;
+		if (select(maxfd+1, &rfd, &wfd, NULL, &tv) > 0) {
+
+			std::vector<ConnectedSocket*>::iterator it = connlist_begin();
+			std::cout << "Traversion " << connected_sockets.size() << " connections." << std::endl;
+			while (it != connected_sockets.end()) {
+				ConnectedSocket& con = **it;
+				std::cout << "Checking fd:" << con.fd << std::endl;
+				if (FD_ISSET(con.fd, &rfd))
+					con.connection_handle();
+
+				if (FD_ISSET(con.fd, &wfd)) {
+					printf("TX: fd:%d len:%d\n", con.fd, con.txfifo._len);
+					int res = send(con.fd, con.txfifo._data, con.txfifo._len, 0);
+					if (res == -1) {
+						con.conn_close();
+					} else
+						con.txfifo.skip(res);
+				}
+
+				it++;
+			}
+
+		} else
+			printf("tick\n");
+
+	}
 }

@@ -16,37 +16,33 @@ std::vector<ConnectedSocket*> connected_sockets_to_be_added;
 
 unsigned int id_sequence = 1;
 
-void connection_accept(ConnectedSocket* pcon) {
-	ConnectedSocket& con = *pcon;
-// 	int res;
-	int acceptedfd;
-	acceptedfd = accept(con.fd, NULL, NULL);
-	if (con.type == CONN_DAEMON_LISTEN) {
-		printf("CONN_DAEMON_LISTEN\n");
-		new DaemonSocket(acceptedfd);
-	}
-	if (con.type == CONN_FORWARD_LISTEN) {
-		printf("Accept CONN_FORWARD_LISTEN\n");
-		ForwardSocket* new_forwardconnection;
-		new_forwardconnection = new ForwardSocket(acceptedfd);
-// 		new_forwardconnection->client_fd = con.client_fd;
-		new_forwardconnection->parent = con.parent;
-		new_forwardconnection->id = id_sequence;
-		struct CMD_ConnectPort cmd;
-		cmd.type = CMD_CONNECT_PORT;
-		cmd.port = con.port;
-		cmd.id = new_forwardconnection->id;
-// 		new_forwardconnection->client_fd = con.client_fd;
-// 		assert(res == sizeof(cmd));
-		con.parent->txfifo.in( (unsigned char*)&cmd, sizeof(cmd) );
-		id_sequence++;
-		printf("CMD_CONNECT_PORT id:%d\n", cmd.id);
-	}
-}
+// void connection_accept(ConnectedSocket* pcon) {
+// 	ConnectedSocket& con = *pcon;
+// 	int acceptedfd;
+// 	acceptedfd = accept(con.get_fd(), NULL, NULL);
+// 	if (con.type == CONN_DAEMON_LISTEN) {
+// 		printf("CONN_DAEMON_LISTEN\n");
+// 		new DaemonSocket(acceptedfd);
+// 	}
+// 	if (con.type == CONN_FORWARD_LISTEN) {
+// 		printf("Accept CONN_FORWARD_LISTEN\n");
+// 		ForwardSocket* new_forwardconnection;
+// 		new_forwardconnection = new ForwardSocket(acceptedfd);
+// 		new_forwardconnection->parent = con.parent;
+// 		new_forwardconnection->id = id_sequence;
+// 		struct CMD_ConnectPort cmd;
+// 		cmd.type = CMD_CONNECT_PORT;
+// 		cmd.port = con.get_port();
+// 		cmd.id = new_forwardconnection->id;
+// 		con.parent->txfifo_in( (unsigned char*)&cmd, sizeof(cmd) );
+// 		id_sequence++;
+// 		printf("CMD_CONNECT_PORT id:%d\n", cmd.id);
+// 	}
+// }
 
 void connlist_add(ConnectedSocket* new_conn) {
 	connected_sockets_to_be_added.push_back(new_conn);
-	std::cout << "Added connection - fd:" << new_conn->fd << ". New size is " << connected_sockets_to_be_added.size() << std::endl;
+	std::cout << "Added connection - fd:" << new_conn->get_fd() << ". New size is " << connected_sockets_to_be_added.size() << std::endl;
 }
 
 std::vector<ConnectedSocket*>::iterator connlist_begin() {
@@ -55,6 +51,7 @@ std::vector<ConnectedSocket*>::iterator connlist_begin() {
 	while (it != connected_sockets.end()) {
 		if ((*it)->pending_delete) {
 			std::vector<ConnectedSocket*>::iterator tmp = it;
+			delete (*it);
 			it--;
 			connected_sockets.erase(tmp);
 		}
@@ -153,45 +150,6 @@ int create_client_socket(const char* ip, const char* port) {
 }
 
 
-
-
-void conn_forward(ConnectedSocket& con) {
-// 	int res;
-
-	const unsigned char* ptr = con.rxfifo._data;
-	struct MSG_SocketData data;
-	data.type = MSG_SOCKET_DATA;
-	data.id = con.id;
-	while (1) {
-		data.len = con.rxfifo._len;
-		if (data.len > 1024)
-			data.len = 1024;
-		if (data.len == 0)
-			break;
-// 		printf("send to fd:%d\n", con.client_fd);
-// 		res = send(con.client_fd, &data, sizeof(data), 0);
-		con.parent->txfifo.in( (unsigned char*)&data, sizeof(data) );
-// 		if (res == -1) {
-// 			con.conn_close();
-// 			return;
-// 		}
-// 		assert(res == sizeof(data));
-// 		res = send(con.client_fd, ptr, data.len, 0);
-		con.parent->txfifo.in( ptr, data.len );
-// 		if (res == -1) {
-// 			con.conn_close();
-// 			return;
-// 		}
-		if (data.len < 500)
-			printf("SOCKET->MUX: id:%d %d bytes payload\n", data.id, data.len);
-// 		assert(res == data.len);
-		con.rxfifo.skip(data.len);
-		ptr += data.len;
-	}
-	assert(con.rxfifo._len == 0);
-}
-
-
 ConnectedSocket& conn_from_id(unsigned short id) {
 	std::vector<ConnectedSocket*>::iterator it = connected_sockets.begin();
 	while (it != connected_sockets.end()) {
@@ -202,21 +160,6 @@ ConnectedSocket& conn_from_id(unsigned short id) {
 	}
 	printf("Failed to lookup id %d\n", id);
 	assert( 0 );
-}
-
-
-void conn_socket_data(ConnectedSocket& con) {
-	int res;
-	struct MSG_SocketData* msg_socketdata = (struct MSG_SocketData*)con.rxfifo._data;
-	int total_len = msg_socketdata->len + sizeof(struct MSG_SocketData);
-	if (con.rxfifo._len < total_len)
-		return;
-	if (msg_socketdata->len < 500)
-		printf("MUX->SOCKET: data %d bytes (%d bytes payload)\n", con.rxfifo._len, msg_socketdata->len);
-	ConnectedSocket& connection = conn_from_id(msg_socketdata->id);
-	res = connection.txfifo.in( con.rxfifo._data+sizeof(struct MSG_SocketData), msg_socketdata->len);
-	assert(res == -1 || res == msg_socketdata->len);
-	con.rxfifo.skip(total_len);
 }
 
 void eventloop() {
@@ -232,15 +175,19 @@ void eventloop() {
 		std::vector<ConnectedSocket*>::iterator it = connlist_begin();
 		while (it != connected_sockets.end()) {
 			ConnectedSocket& con = **it;
-			if (con.rxfifo.free()) {
-				FD_SET(con.fd, &rfd);
-				if (maxfd < con.fd)
-					maxfd = con.fd;
+
+			// Read from sockets only if rxfifo is empty
+			if (con.rx_free()) {
+				FD_SET(con.get_fd(), &rfd);
+				if (maxfd < con.get_fd())
+					maxfd = con.get_fd();
 			}
-			if (con.txfifo._len) {
-				FD_SET(con.fd, &wfd);
-				if (maxfd < con.fd)
-					maxfd = con.fd;
+
+			// Write only to sockets when write-data is available
+			if (con.tx_len()) {
+				FD_SET(con.get_fd(), &wfd);
+				if (maxfd < con.get_fd())
+					maxfd = con.get_fd();
 			}
 
 			it++;
@@ -257,17 +204,12 @@ void eventloop() {
 			std::cout << "Traversion " << connected_sockets.size() << " connections." << std::endl;
 			while (it != connected_sockets.end()) {
 				ConnectedSocket& con = **it;
-				std::cout << "Checking fd:" << con.fd << std::endl;
-				if (FD_ISSET(con.fd, &rfd))
+				std::cout << "Checking fd:" << con.get_fd() << std::endl;
+				if (FD_ISSET(con.get_fd(), &rfd))
 					con.connection_handle();
 
-				if (FD_ISSET(con.fd, &wfd)) {
-					printf("TX: fd:%d len:%d\n", con.fd, con.txfifo._len);
-					int res = send(con.fd, con.txfifo._data, con.txfifo._len, 0);
-					if (res == -1) {
-						con.conn_close();
-					} else
-						con.txfifo.skip(res);
+				if (FD_ISSET(con.get_fd(), &wfd)) {
+					con.transmit();
 				}
 
 				it++;

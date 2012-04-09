@@ -10,40 +10,15 @@
 #include "connlist.h"
 
 std::vector<ConnectedSocket*> connected_sockets;
-
 std::vector<ConnectedSocket*> connected_sockets_to_be_added;
-
-
 unsigned int id_sequence = 1;
 
-// void connection_accept(ConnectedSocket* pcon) {
-// 	ConnectedSocket& con = *pcon;
-// 	int acceptedfd;
-// 	acceptedfd = accept(con.get_fd(), NULL, NULL);
-// 	if (con.type == CONN_DAEMON_LISTEN) {
-// 		printf("CONN_DAEMON_LISTEN\n");
-// 		new DaemonSocket(acceptedfd);
-// 	}
-// 	if (con.type == CONN_FORWARD_LISTEN) {
-// 		printf("Accept CONN_FORWARD_LISTEN\n");
-// 		ForwardSocket* new_forwardconnection;
-// 		new_forwardconnection = new ForwardSocket(acceptedfd);
-// 		new_forwardconnection->parent = con.parent;
-// 		new_forwardconnection->id = id_sequence;
-// 		struct CMD_ConnectPort cmd;
-// 		cmd.type = CMD_CONNECT_PORT;
-// 		cmd.port = con.get_port();
-// 		cmd.id = new_forwardconnection->id;
-// 		con.parent->txfifo_in( (unsigned char*)&cmd, sizeof(cmd) );
-// 		id_sequence++;
-// 		printf("CMD_CONNECT_PORT id:%d\n", cmd.id);
-// 	}
-// }
 
 void connlist_add(ConnectedSocket* new_conn) {
 	connected_sockets_to_be_added.push_back(new_conn);
 	std::cout << "Added connection - fd:" << new_conn->get_fd() << ". New size is " << connected_sockets_to_be_added.size() << std::endl;
 }
+
 
 std::vector<ConnectedSocket*>::iterator connlist_begin() {
 
@@ -105,6 +80,7 @@ int create_server_socket(const char* port) {
 	return server_sockfd;
 }
 
+
 int create_client_socket(const char* ip, const char* port) {
 	struct addrinfo hints;
 	struct addrinfo *result, *rp;
@@ -162,6 +138,7 @@ ConnectedSocket& conn_from_id(unsigned short id) {
 	assert( 0 );
 }
 
+
 void eventloop() {
 	fd_set rfd;
 	fd_set wfd;
@@ -193,9 +170,6 @@ void eventloop() {
 			it++;
 		}
 
-
-
-
 		tv.tv_usec = 0;
 		tv.tv_sec = 1;
 		if (select(maxfd+1, &rfd, &wfd, NULL, &tv) > 0) {
@@ -219,4 +193,117 @@ void eventloop() {
 			printf("tick\n");
 
 	}
+}
+
+
+
+void ConnectedSocket::setup() {
+	fd = -1;
+	id = 0;
+	port = 0;
+	parent = NULL;
+	pending_delete = false;
+	connlist_add(this);
+}
+
+
+ConnectedSocket::ConnectedSocket() {
+	setup();
+}
+
+ConnectedSocket::ConnectedSocket(int type) {
+	setup();
+	this->type = type;
+}
+
+int ConnectedSocket::conn_receive() {
+	assert( rxfifo.free() );
+	int len = recv(fd, rxfifo.get_in(), rxfifo.free(), MSG_DONTWAIT);
+	rxfifo.inc(len);
+	if (len == 0 || len == -1) {
+		printf("Socket disconnected fd:%d\n", fd);
+		conn_close();
+		return -1;
+	}
+// 	printf("Received %d bytes on fd:%d type:%d id:%d\n", len, it->fd, it->type, it->id);
+	return 0;
+}
+
+void ConnectedSocket::conn_close() {
+	printf("Closing id:%d fd:%d\n", id, fd);
+	close (fd);
+	fd = -1;
+	connlist_delete();
+}
+
+void ConnectedSocket::connlist_delete() {
+	pending_delete = true;
+}
+
+int ConnectedSocket::txfifo_in(const unsigned char* data, int len) {
+	return txfifo.in(data,len);
+}
+
+int ConnectedSocket::tx_len() {
+	return txfifo.len();
+}
+
+int ConnectedSocket::rx_free() {
+	return rxfifo.free();
+}
+
+int ConnectedSocket::rx_len() {
+	return rxfifo.len();
+}
+
+int ConnectedSocket::get_fd() {
+	return fd;
+}
+
+int ConnectedSocket::get_port() {
+	return port;
+}
+
+void ConnectedSocket::transmit() {
+	printf("TX: fd:%d len:%d\n", fd, txfifo.len());
+	int res = ::send(fd, txfifo.get_out(), txfifo.len(), 0);
+	if (res == -1) {
+		conn_close();
+	} else
+		txfifo.skip(res);
+}
+
+void ConnectedSocket::conn_forward(ConnectedSocket& con) {
+	const unsigned char* ptr = con.rxfifo.get_out();
+	struct MSG_SocketData data;
+	data.type = MSG_SOCKET_DATA;
+	data.id = con.id;
+	while (1) {
+		data.len = con.rx_len();
+		if (data.len > 1024)
+			data.len = 1024;
+		if (data.len == 0)
+			break;
+		con.parent->txfifo_in( (unsigned char*)&data, sizeof(data) );
+		con.parent->txfifo_in( ptr, data.len );
+		if (data.len < 500)
+			printf("SOCKET->MUX: id:%d %d bytes payload\n", data.id, data.len);
+		con.rxfifo.skip(data.len);
+		ptr += data.len;
+	}
+	assert(con.rxfifo.len() == 0);
+}
+
+void ConnectedSocket::conn_socket_data(ConnectedSocket& con) {
+	int res;
+	struct MSG_SocketData* msg_socketdata = (struct MSG_SocketData*)con.rxfifo.get_out();
+	int total_len = msg_socketdata->len + sizeof(struct MSG_SocketData);
+	if (con.rxfifo.len() < total_len)
+		return;
+	if (msg_socketdata->len < 500)
+		printf("MUX->SOCKET: data %d bytes (%d bytes payload)\n", con.rxfifo.len(), msg_socketdata->len);
+	ConnectedSocket& connection = conn_from_id(msg_socketdata->id);
+	res = connection.txfifo_in( con.rxfifo.get_out()+sizeof(struct MSG_SocketData), msg_socketdata->len);
+	assert(res == -1 || res == msg_socketdata->len);
+	con.rxfifo.skip(total_len);
 }

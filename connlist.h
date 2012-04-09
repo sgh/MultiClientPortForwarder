@@ -31,7 +31,6 @@ void connlist_add(ConnectedSocket* new_conn);
 ConnectedSocket& conn_from_id(unsigned short id);
 
 class ConnectedSocket {
-
 protected:
 	int    fd;
 	char   type;
@@ -48,118 +47,22 @@ public:
 	bool pending_delete;
 	unsigned short id;
 
-	void setup() {
-		fd = -1;
-		id = 0;
-		port = 0;
-		parent = NULL;
-		pending_delete = false;
-		connlist_add(this);
-	}
-	ConnectedSocket() {
-		setup();
-	}
-
-	ConnectedSocket(int type) {
-		setup();
-		this->type = type;
-	}
-
-	int conn_receive() {
-		assert( rxfifo.free() );
-		int len = recv(fd, rxfifo.get_in(), rxfifo.free(), MSG_DONTWAIT);
-		rxfifo.inc(len);
-		if (len == 0 || len == -1) {
-			printf("Socket disconnected fd:%d\n", fd);
-			conn_close();
-			return -1;
-		}
-	// 	printf("Received %d bytes on fd:%d type:%d id:%d\n", len, it->fd, it->type, it->id);
-		return 0;
-	}
-
-	void conn_close() {
-		printf("Closing id:%d fd:%d\n", id, fd);
-		close (fd);
-		fd = -1;
-		connlist_delete();
-	}
-
-	void connlist_delete() {
-		pending_delete = true;
-	}
-
-	int txfifo_in(const unsigned char* data, int len) {
-		return txfifo.in(data,len);
-	}
-
-	int tx_len() {
-		return txfifo.len();
-	}
-
-	int rx_free() {
-		return rxfifo.free();
-	}
-
-	int rx_len() {
-		return rxfifo.len();
-	}
-
-	int get_fd() {
-		return fd;
-	}
-	
-	int get_port() {
-		return port;
-	}
-
-	void transmit() {
-		printf("TX: fd:%d len:%d\n", fd, txfifo.len());
-		int res = ::send(fd, txfifo.get_out(), txfifo.len(), 0);
-		if (res == -1) {
-			conn_close();
-		} else
-			txfifo.skip(res);
-	}
-
-	void conn_forward(ConnectedSocket& con) {
-		const unsigned char* ptr = con.rxfifo.get_out();
-		struct MSG_SocketData data;
-		data.type = MSG_SOCKET_DATA;
-		data.id = con.id;
-		while (1) {
-			data.len = con.rx_len();
-			if (data.len > 1024)
-				data.len = 1024;
-			if (data.len == 0)
-				break;
-			con.parent->txfifo_in( (unsigned char*)&data, sizeof(data) );
-			con.parent->txfifo_in( ptr, data.len );
-			if (data.len < 500)
-				printf("SOCKET->MUX: id:%d %d bytes payload\n", data.id, data.len);
-			con.rxfifo.skip(data.len);
-			ptr += data.len;
-		}
-		assert(con.rxfifo.len() == 0);
-	}
-
-	void conn_socket_data(ConnectedSocket& con) {
-		int res;
-		struct MSG_SocketData* msg_socketdata = (struct MSG_SocketData*)con.rxfifo.get_out();
-		int total_len = msg_socketdata->len + sizeof(struct MSG_SocketData);
-		if (con.rxfifo.len() < total_len)
-			return;
-		if (msg_socketdata->len < 500)
-			printf("MUX->SOCKET: data %d bytes (%d bytes payload)\n", con.rxfifo.len(), msg_socketdata->len);
-		ConnectedSocket& connection = conn_from_id(msg_socketdata->id);
-		res = connection.txfifo_in( con.rxfifo.get_out()+sizeof(struct MSG_SocketData), msg_socketdata->len);
-		assert(res == -1 || res == msg_socketdata->len);
-		con.rxfifo.skip(total_len);
-	}
-
-
+	void setup();
+	ConnectedSocket();
+	ConnectedSocket(int type);
+	int conn_receive();
+	void conn_close();
+	void connlist_delete();
+	int txfifo_in(const unsigned char* data, int len);
+	int tx_len();
+	int rx_free();
+	int rx_len();
+	int get_fd();
+	int get_port();
+	void transmit();
+	void conn_forward(ConnectedSocket& con);
+	void conn_socket_data(ConnectedSocket& con);
 	virtual void connection_handle() = 0;
-
 };
 
 

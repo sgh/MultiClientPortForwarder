@@ -1,13 +1,16 @@
+CFLAGS=-Wall -Wextra -O0 -g -MD
+CXXFLAGS=-Wall -Wextra -O0 -g -MD
+CC=g++
 
-CFLAGS=-Wall -Wextra -O0 -g
-CXXFLAGS=-Wall -Wextra -O0 -g
+COMMONFILES = connlist.o socketfifo.o
 
 all: server client
 
-server: connlist.cpp connlist.h server.cpp messages.h
+server: server.o ${COMMONFILES}
 
-client: connlist.cpp connlist.h client.cpp messages.h
+client: client.o ${COMMONFILES}
 
 clean:
-	rm -f client
-	rm -f server
+	rm -f client server *.d *.o
+
+-include *.d

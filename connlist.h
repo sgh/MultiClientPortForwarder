@@ -1,6 +1,7 @@
 #ifndef CONNLIST_H
 #define CONNLIST_H
 
+#include "socketfifo.h"
 #include "messages.h"
 
 #include <sys/types.h>
@@ -8,8 +9,6 @@
 #include <errno.h>
 #include <netdb.h>
 #include <assert.h>
-// 	struct ConnectedSocket* next;
-// 	struct ConnectedSocket* prev;
 
 #include <vector>
 #include <string>
@@ -25,59 +24,6 @@
 
 extern unsigned int id_sequence;
 
-class SocketFifo {
-	unsigned char _data[102400];
-	int _len;
-
-public:
-	SocketFifo() {
-		_len = 0;
-	}
-
-	unsigned int free() {
-		return sizeof(_data) - _len;
-	}
-
-	void inc(int len) {
-		_len += len;
-	}
-
-	void skip(int len) {
-		if (!len)
-			return;
-		_len -= len;
-		if (_len && _len != len)
-			memmove(_data, _data+len, _len);
-	}
-
-	unsigned char* get_in() {
-		return _data+_len;
-	}
-
-	unsigned char* get_out() {
-		return _data;
-	}
-
-	int len() {
-		return _len;
-	}
-
-	int out(char* data, int len) {
-		if (len > _len)
-			len = _len;
-
-		memcpy(data, _data, len);
-		skip(len);
-		return _len;
-	}
-
-	int in(const unsigned char* data, int len) {
-		memcpy(_data+_len, data, len);
-		_len += len;
-		return len;
-	}
-
-};
 
 class ConnectedSocket;
 

@@ -216,6 +216,10 @@ ConnectedSocket::ConnectedSocket(int type) {
 	this->type = type;
 }
 
+ConnectedSocket::~ConnectedSocket() {
+	conn_close();
+}
+
 int ConnectedSocket::conn_receive() {
 	assert( rxfifo.free() );
 	int len = recv(fd, rxfifo.get_in(), rxfifo.free(), MSG_DONTWAIT);
@@ -314,12 +318,12 @@ ForwardSocket::ForwardSocket(int fd, ConnectedSocket* parent, unsigned int id) {
 	this->type = CONN_FORWARD;
 	this->parent = parent;
 	this->id = id;
+	printf("Created ForwardSocket\n");
 }
 
 
 void ForwardSocket::connection_handle() {
-	if (conn_receive() == -1)
-		return;
+	conn_receive();
 
 	/* Forward local socket data over the channel to the client */
 	conn_forward(*this);
@@ -368,6 +372,7 @@ void DaemonSocket::connection_handle() {
 
 	int last_len = 0;
 	struct MSG_IdentifyConnection* identify = (struct MSG_IdentifyConnection*)rxfifo.get_out();
+	struct CMD_ClosePort * closeport = (struct CMD_ClosePort*)rxfifo.get_out();
 	do {
 		last_len = rxfifo.len();
 		switch (rxfifo.get_out()[0]) {
@@ -398,6 +403,12 @@ void DaemonSocket::connection_handle() {
 				}
 				break;
 			}
+			case CMD_CLOSE_PORT: {
+				printf("CMD_CLOSE_PORT id:%d\n", closeport->id);
+				conn_from_id(closeport->id).connlist_delete();
+				rxfifo.skip( sizeof(*closeport) );
+				}
+				break;
 			default:
 				printf("Invalid package\n");
 				break;
@@ -456,9 +467,7 @@ void ClientSocket::connection_handle() {
 				break;
 			case CMD_CLOSE_PORT:
 				printf("Close port: %d\n", cmd_closeport->id);
-				connection = &conn_from_id(cmd_closeport->id);
-				if (connection)
-					(*connection).conn_close();
+				conn_from_id(cmd_closeport->id).conn_close();
 				rxfifo.skip( sizeof(struct CMD_ClosePort) );
 				break;
 			case MSG_SOCKET_DATA:

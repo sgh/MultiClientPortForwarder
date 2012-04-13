@@ -74,6 +74,7 @@ public:
 	void conn_forward(ConnectedSocket& con);
 	void conn_socket_data(ConnectedSocket& con);
 	virtual void connection_handle() = 0;
+	~ConnectedSocket();
 };
 
 

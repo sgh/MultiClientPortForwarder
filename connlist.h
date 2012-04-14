@@ -99,9 +99,12 @@ public:
 };
 
 
-class DaemonListenSocket : public ConnectedSocket {
+/**
+ * Class used my the central server daemon
+ */
+class ServerDaemonSocket : public ConnectedSocket {
 public:
-	DaemonListenSocket(int fd);
+	ServerDaemonSocket(int fd);
 	virtual void connection_handle();
 };
 

@@ -12,7 +12,7 @@
 int main() {
 
 	int server_sockfd = create_server_socket("12345");
-	new DaemonListenSocket(server_sockfd);
+	new ServerDaemonSocket(server_sockfd);
 
 	eventloop();
 }

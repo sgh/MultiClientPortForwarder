@@ -417,12 +417,12 @@ void DaemonSocket::connection_handle() {
 
 }
 
-DaemonListenSocket::DaemonListenSocket(int fd) {
+ServerDaemonSocket::ServerDaemonSocket(int fd) {
 	this->fd = fd;
 	this->type = CONN_DAEMON_LISTEN;
 }
 
-void DaemonListenSocket::connection_handle() {
+void ServerDaemonSocket::connection_handle() {
 	int acceptedfd;
 	acceptedfd = accept(fd, NULL, NULL);
 	if (type == CONN_DAEMON_LISTEN) {

@@ -78,6 +78,9 @@ public:
 };
 
 
+/**
+ * An established forwarded connection
+ */
 class ForwardSocket : public ConnectedSocket {
 public:
 	ForwardSocket(int fd, ConnectedSocket* parent, unsigned int id);
@@ -85,6 +88,10 @@ public:
 };
 
 
+/**
+ * Used by the server for waiting for connections on sockets that should be
+ * forwarded to a port on the client
+ */
 class ForwardListenSocket : public ConnectedSocket {
 public:
 	ForwardListenSocket(int fd, int port, ConnectedSocket* parent);

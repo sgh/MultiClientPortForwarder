@@ -92,9 +92,12 @@ public:
 };
 
 
-class DaemonSocket : public ConnectedSocket {
+/**
+ * Class used by the server for each client connection 
+ */
+class ClientConnectionSocket : public ConnectedSocket {
 public:
-	DaemonSocket(int fd);
+	ClientConnectionSocket(int fd);
 	virtual void connection_handle();
 };
 

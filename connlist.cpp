@@ -358,13 +358,13 @@ void ForwardListenSocket::connection_handle() {
 
 }
 
-DaemonSocket::DaemonSocket(int fd) {
+ClientConnectionSocket::ClientConnectionSocket(int fd) {
 	this->fd = fd;
 	this->type = CONN_DAEMON;
 }
 
 
-void DaemonSocket::connection_handle() {
+void ClientConnectionSocket::connection_handle() {
 	if (conn_receive() == -1)
 		return;
 
@@ -427,7 +427,7 @@ void ServerDaemonSocket::connection_handle() {
 	acceptedfd = accept(fd, NULL, NULL);
 	if (type == CONN_DAEMON_LISTEN) {
 		printf("CONN_DAEMON_LISTEN\n");
-		new DaemonSocket(acceptedfd);
+		new ClientConnectionSocket(acceptedfd);
 	}
 
 }

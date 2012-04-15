@@ -35,7 +35,6 @@ int create_server_socket(const char* port);
 int create_client_socket(const char* ip, const char* port);
 
 void connlist_add(ConnectedSocket* new_conn);
-void conn_forward(ConnectedSocket& con);
 void conn_socket_data(ConnectedSocket& con);
 
 void eventloop();
@@ -71,7 +70,6 @@ public:
 	int get_fd();
 	int get_port();
 	void transmit();
-	void conn_forward(ConnectedSocket& con);
 	void conn_socket_data(ConnectedSocket& con);
 	virtual void connection_handle() = 0;
 	~ConnectedSocket();
@@ -82,6 +80,7 @@ public:
  * An established forwarded connection
  */
 class ForwardSocket : public ConnectedSocket {
+	void forward_data();
 public:
 	ForwardSocket(int fd, ConnectedSocket* parent, unsigned int id);
 	virtual void connection_handle();

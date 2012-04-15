@@ -277,26 +277,6 @@ void ConnectedSocket::transmit() {
 		txfifo.skip(res);
 }
 
-void ConnectedSocket::conn_forward(ConnectedSocket& con) {
-	const unsigned char* ptr = con.rxfifo.get_out();
-	struct MSG_SocketData data;
-	data.type = MSG_SOCKET_DATA;
-	data.id = con.id;
-	while (1) {
-		data.len = con.rx_len();
-		if (data.len > 1024)
-			data.len = 1024;
-		if (data.len == 0)
-			break;
-		con.parent->txfifo_in( (unsigned char*)&data, sizeof(data) );
-		con.parent->txfifo_in( ptr, data.len );
-		if (data.len < 500)
-			printf("SOCKET->MUX: id:%d %d bytes payload\n", data.id, data.len);
-		con.rxfifo.skip(data.len);
-		ptr += data.len;
-	}
-	assert(con.rxfifo.len() == 0);
-}
 
 void ConnectedSocket::conn_socket_data(ConnectedSocket& con) {
 	int res;
@@ -322,11 +302,33 @@ ForwardSocket::ForwardSocket(int fd, ConnectedSocket* parent, unsigned int id) {
 }
 
 
+void ForwardSocket::forward_data() {
+	const unsigned char* ptr = rxfifo.get_out();
+	struct MSG_SocketData data;
+	data.type = MSG_SOCKET_DATA;
+	data.id = id;
+	while (1) {
+		data.len = rx_len();
+		if (data.len > 1024)
+			data.len = 1024;
+		if (data.len == 0)
+			break;
+		parent->txfifo_in( (unsigned char*)&data, sizeof(data) );
+		parent->txfifo_in( ptr, data.len );
+		if (data.len < 500)
+			printf("SOCKET->MUX: id:%d %d bytes payload\n", data.id, data.len);
+		rxfifo.skip(data.len);
+		ptr += data.len;
+	}
+	assert(rxfifo.len() == 0);
+}
+
+
 void ForwardSocket::connection_handle() {
 	conn_receive();
 
 	/* Forward local socket data over the channel to the client */
-	conn_forward(*this);
+	forward_data();
 	if (fd == -1) {
 		struct CMD_ClosePort cmd;
 		cmd.type = CMD_CLOSE_PORT;
@@ -478,7 +480,4 @@ void ClientSocket::connection_handle() {
 				break;
 		}
 	} while (last_len != rxfifo.len() && rxfifo.len());
-
-	/* Forward local socket data to the server */
-	conn_forward(*this);
 }

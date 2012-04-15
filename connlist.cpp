@@ -212,7 +212,6 @@ ConnectedSocket::ConnectedSocket() {
 
 ConnectedSocket::ConnectedSocket(int type) {
 	setup();
-	this->_type = type;
 }
 
 ConnectedSocket::~ConnectedSocket() {
@@ -290,7 +289,6 @@ void ConnectedSocket::conn_socket_data(ConnectedSocket& con) {
 
 ForwardSocket::ForwardSocket(int fd, ConnectedSocket* parent, unsigned int id) {
 	this->_fd = fd;
-	this->_type = CONN_FORWARD;
 	this->_parent = parent;
 	this->_id = id;
 	printf("Created ForwardSocket\n");
@@ -335,7 +333,6 @@ void ForwardSocket::connection_handle() {
 
 ForwardListenSocket::ForwardListenSocket(int fd, int port, ConnectedSocket* parent) {
 	this->_fd = fd;
-	this->_type = CONN_FORWARD_LISTEN;
 	this->_parent = parent;
 	this->_port = port;
 }
@@ -357,7 +354,6 @@ void ForwardListenSocket::connection_handle() {
 
 ClientConnectionSocket::ClientConnectionSocket(int fd) {
 	this->_fd = fd;
-	this->_type = CONN_DAEMON;
 }
 
 
@@ -416,22 +412,17 @@ void ClientConnectionSocket::connection_handle() {
 
 ServerDaemonSocket::ServerDaemonSocket(int fd) {
 	this->_fd = fd;
-	this->_type = CONN_DAEMON_LISTEN;
 }
 
 void ServerDaemonSocket::connection_handle() {
 	int acceptedfd;
 	acceptedfd = accept(_fd, NULL, NULL);
-	if (_type == CONN_DAEMON_LISTEN) {
-		printf("CONN_DAEMON_LISTEN\n");
-		new ClientConnectionSocket(acceptedfd);
-	}
-
+	printf("CONN_DAEMON_LISTEN\n");
+	new ClientConnectionSocket(acceptedfd);
 }
 
 ClientSocket::ClientSocket(int fd) {
 	this->_fd = fd;
-	this->_type = CONN_DAEMON;
 }
 
 void ClientSocket::connection_handle() {

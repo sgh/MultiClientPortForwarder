@@ -43,7 +43,6 @@ void eventloop();
 class ConnectedSocket {
 protected:
 	int    _fd;
-	char   _type;
 
 	ConnectedSocket* _parent;
 	SocketFifo _rxfifo;

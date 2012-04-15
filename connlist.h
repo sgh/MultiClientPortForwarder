@@ -45,8 +45,6 @@ protected:
 	int    _fd;
 	char   _type;
 
-	/* FORWARD sockets */
-	unsigned short _port;
 	ConnectedSocket* _parent;
 	SocketFifo _rxfifo;
 	SocketFifo _txfifo;
@@ -66,7 +64,6 @@ public:
 	int rx_free();
 	int rx_len();
 	int get_fd();
-	int get_port();
 	void transmit();
 	void conn_socket_data(ConnectedSocket& con);
 	virtual void connection_handle() = 0;
@@ -90,6 +87,7 @@ public:
  * forwarded to a port on the client
  */
 class ForwardListenSocket : public ConnectedSocket {
+	unsigned short _port;
 public:
 	ForwardListenSocket(int fd, int port, ConnectedSocket* parent);
 	virtual void connection_handle();

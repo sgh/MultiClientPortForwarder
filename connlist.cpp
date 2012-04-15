@@ -200,7 +200,6 @@ void eventloop() {
 void ConnectedSocket::setup() {
 	_fd = -1;
 	_id = 0;
-	_port = 0;
 	_parent = NULL;
 	_pending_delete = false;
 	connlist_add(this);
@@ -262,10 +261,6 @@ int ConnectedSocket::rx_len() {
 
 int ConnectedSocket::get_fd() {
 	return _fd;
-}
-
-int ConnectedSocket::get_port() {
-	return _port;
 }
 
 void ConnectedSocket::transmit() {

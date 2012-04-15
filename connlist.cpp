@@ -24,7 +24,7 @@ std::vector<ConnectedSocket*>::iterator connlist_begin() {
 
 	std::vector<ConnectedSocket*>::iterator it = connected_sockets.begin();
 	while (it != connected_sockets.end()) {
-		if ((*it)->pending_delete) {
+		if ((*it)->_pending_delete) {
 			std::vector<ConnectedSocket*>::iterator tmp = it;
 			delete (*it);
 			it--;
@@ -130,7 +130,7 @@ ConnectedSocket& conn_from_id(unsigned short id) {
 	std::vector<ConnectedSocket*>::iterator it = connected_sockets.begin();
 	while (it != connected_sockets.end()) {
 		
-		if ((*it)->id == id)
+		if ((*it)->_id == id)
 			return *(*it);
 		it++;
 	}
@@ -198,11 +198,11 @@ void eventloop() {
 
 
 void ConnectedSocket::setup() {
-	fd = -1;
-	id = 0;
-	port = 0;
-	parent = NULL;
-	pending_delete = false;
+	_fd = -1;
+	_id = 0;
+	_port = 0;
+	_parent = NULL;
+	_pending_delete = false;
 	connlist_add(this);
 }
 
@@ -213,7 +213,7 @@ ConnectedSocket::ConnectedSocket() {
 
 ConnectedSocket::ConnectedSocket(int type) {
 	setup();
-	this->type = type;
+	this->_type = type;
 }
 
 ConnectedSocket::~ConnectedSocket() {
@@ -221,11 +221,11 @@ ConnectedSocket::~ConnectedSocket() {
 }
 
 int ConnectedSocket::conn_receive() {
-	assert( rxfifo.free() );
-	int len = recv(fd, rxfifo.get_in(), rxfifo.free(), MSG_DONTWAIT);
-	rxfifo.inc(len);
+	assert( _rxfifo.free() );
+	int len = recv(_fd, _rxfifo.get_in(), _rxfifo.free(), MSG_DONTWAIT);
+	_rxfifo.inc(len);
 	if (len == 0 || len == -1) {
-		printf("Socket disconnected fd:%d\n", fd);
+		printf("Socket disconnected fd:%d\n", _fd);
 		conn_close();
 		return -1;
 	}
@@ -234,93 +234,93 @@ int ConnectedSocket::conn_receive() {
 }
 
 void ConnectedSocket::conn_close() {
-	printf("Closing id:%d fd:%d\n", id, fd);
-	close (fd);
-	fd = -1;
+	printf("Closing id:%d fd:%d\n", _id, _fd);
+	close (_fd);
+	_fd = -1;
 	connlist_delete();
 }
 
 void ConnectedSocket::connlist_delete() {
-	pending_delete = true;
+	_pending_delete = true;
 }
 
 int ConnectedSocket::txfifo_in(const unsigned char* data, int len) {
-	return txfifo.in(data,len);
+	return _txfifo.in(data,len);
 }
 
 int ConnectedSocket::tx_len() {
-	return txfifo.len();
+	return _txfifo.len();
 }
 
 int ConnectedSocket::rx_free() {
-	return rxfifo.free();
+	return _rxfifo.free();
 }
 
 int ConnectedSocket::rx_len() {
-	return rxfifo.len();
+	return _rxfifo.len();
 }
 
 int ConnectedSocket::get_fd() {
-	return fd;
+	return _fd;
 }
 
 int ConnectedSocket::get_port() {
-	return port;
+	return _port;
 }
 
 void ConnectedSocket::transmit() {
-	printf("TX: fd:%d len:%d\n", fd, txfifo.len());
-	int res = ::send(fd, txfifo.get_out(), txfifo.len(), 0);
+	printf("TX: fd:%d len:%d\n", _fd, _txfifo.len());
+	int res = ::send(_fd, _txfifo.get_out(), _txfifo.len(), 0);
 	if (res == -1) {
 		conn_close();
 	} else
-		txfifo.skip(res);
+		_txfifo.skip(res);
 }
 
 
 void ConnectedSocket::conn_socket_data(ConnectedSocket& con) {
 	int res;
-	struct MSG_SocketData* msg_socketdata = (struct MSG_SocketData*)con.rxfifo.get_out();
+	struct MSG_SocketData* msg_socketdata = (struct MSG_SocketData*)con._rxfifo.get_out();
 	int total_len = msg_socketdata->len + sizeof(struct MSG_SocketData);
-	if (con.rxfifo.len() < total_len)
+	if (con._rxfifo.len() < total_len)
 		return;
 	if (msg_socketdata->len < 500)
-		printf("MUX->SOCKET: data %d bytes (%d bytes payload)\n", con.rxfifo.len(), msg_socketdata->len);
+		printf("MUX->SOCKET: data %d bytes (%d bytes payload)\n", con._rxfifo.len(), msg_socketdata->len);
 	ConnectedSocket& connection = conn_from_id(msg_socketdata->id);
-	res = connection.txfifo_in( con.rxfifo.get_out()+sizeof(struct MSG_SocketData), msg_socketdata->len);
+	res = connection.txfifo_in( con._rxfifo.get_out()+sizeof(struct MSG_SocketData), msg_socketdata->len);
 	assert(res == -1 || res == msg_socketdata->len);
-	con.rxfifo.skip(total_len);
+	con._rxfifo.skip(total_len);
 }
 
 
 ForwardSocket::ForwardSocket(int fd, ConnectedSocket* parent, unsigned int id) {
-	this->fd = fd;
-	this->type = CONN_FORWARD;
-	this->parent = parent;
-	this->id = id;
+	this->_fd = fd;
+	this->_type = CONN_FORWARD;
+	this->_parent = parent;
+	this->_id = id;
 	printf("Created ForwardSocket\n");
 }
 
 
 void ForwardSocket::forward_data() {
-	const unsigned char* ptr = rxfifo.get_out();
+	const unsigned char* ptr = _rxfifo.get_out();
 	struct MSG_SocketData data;
 	data.type = MSG_SOCKET_DATA;
-	data.id = id;
+	data.id = _id;
 	while (1) {
 		data.len = rx_len();
 		if (data.len > 1024)
 			data.len = 1024;
 		if (data.len == 0)
 			break;
-		parent->txfifo_in( (unsigned char*)&data, sizeof(data) );
-		parent->txfifo_in( ptr, data.len );
+		_parent->txfifo_in( (unsigned char*)&data, sizeof(data) );
+		_parent->txfifo_in( ptr, data.len );
 		if (data.len < 500)
 			printf("SOCKET->MUX: id:%d %d bytes payload\n", data.id, data.len);
-		rxfifo.skip(data.len);
+		_rxfifo.skip(data.len);
 		ptr += data.len;
 	}
-	assert(rxfifo.len() == 0);
+	assert(_rxfifo.len() == 0);
 }
 
 
@@ -329,40 +329,40 @@ void ForwardSocket::connection_handle() {
 
 	/* Forward local socket data over the channel to the client */
 	forward_data();
-	if (fd == -1) {
+	if (_fd == -1) {
 		struct CMD_ClosePort cmd;
 		cmd.type = CMD_CLOSE_PORT;
-		cmd.id = id;
+		cmd.id = _id;
 		printf("Send closeport %d\n", cmd.id);
-		parent->txfifo_in( (unsigned char*)&cmd, sizeof(cmd) );
+		_parent->txfifo_in( (unsigned char*)&cmd, sizeof(cmd) );
 	}
 }
 
 ForwardListenSocket::ForwardListenSocket(int fd, int port, ConnectedSocket* parent) {
-	this->fd = fd;
-	this->type = CONN_FORWARD_LISTEN;
-	this->parent = parent;
-	this->port = port;
+	this->_fd = fd;
+	this->_type = CONN_FORWARD_LISTEN;
+	this->_parent = parent;
+	this->_port = port;
 }
 
 void ForwardListenSocket::connection_handle() {
 	int acceptedfd;
-	acceptedfd = accept(fd, NULL, NULL);
+	acceptedfd = accept(_fd, NULL, NULL);
 	printf("Accept CONN_FORWARD_LISTEN\n");
-	new ForwardSocket(acceptedfd, parent, id_sequence);
+	new ForwardSocket(acceptedfd, _parent, id_sequence);
 	struct CMD_ConnectPort cmd;
 	cmd.type = CMD_CONNECT_PORT;
-	cmd.port = port;
+	cmd.port = _port;
 	cmd.id = id_sequence;
-	parent->txfifo_in( (unsigned char*)&cmd, sizeof(cmd) );
+	_parent->txfifo_in( (unsigned char*)&cmd, sizeof(cmd) );
 	id_sequence++;
 	printf("CMD_CONNECT_PORT id:%d\n", cmd.id);
 
 }
 
 ClientConnectionSocket::ClientConnectionSocket(int fd) {
-	this->fd = fd;
-	this->type = CONN_DAEMON;
+	this->_fd = fd;
+	this->_type = CONN_DAEMON;
 }
 
 
@@ -370,64 +370,64 @@ void ClientConnectionSocket::connection_handle() {
 	if (conn_receive() == -1)
 		return;
 
-	struct MSG_AckConnectPort* ack = (struct MSG_AckConnectPort*)rxfifo.get_out();
+	struct MSG_AckConnectPort* ack = (struct MSG_AckConnectPort*)_rxfifo.get_out();
 
 	int last_len = 0;
-	struct MSG_IdentifyConnection* identify = (struct MSG_IdentifyConnection*)rxfifo.get_out();
-	struct CMD_ClosePort * closeport = (struct CMD_ClosePort*)rxfifo.get_out();
+	struct MSG_IdentifyConnection* identify = (struct MSG_IdentifyConnection*)_rxfifo.get_out();
+	struct CMD_ClosePort * closeport = (struct CMD_ClosePort*)_rxfifo.get_out();
 	do {
-		last_len = rxfifo.len();
-		switch (rxfifo.get_out()[0]) {
+		last_len = _rxfifo.len();
+		switch (_rxfifo.get_out()[0]) {
 			case MSG_ACK_CONNECT_PORT:
 				printf("Ack connect port: %d\n", ack->id);
-				rxfifo.skip( sizeof(struct MSG_AckConnectPort) );
+				_rxfifo.skip( sizeof(struct MSG_AckConnectPort) );
 				break;
 			case MSG_SOCKET_DATA:
 				conn_socket_data(*this);
 				break;
 			case MSG_IDENTIFY_CONNECTION: {
 				int bufsize = identify->len - sizeof(struct MSG_IdentifyConnection) + 1;
-				if (rxfifo.len() < identify->len)
+				if (_rxfifo.len() < identify->len)
 					break;
 				printf("bufsize:%d\n", bufsize);
-				name.assign((char*)identify + sizeof(struct MSG_IdentifyConnection), bufsize-1);
-				printf("len:%d \"%s\"\n", identify->len, name.c_str());
-				rxfifo.skip(identify->len);
+				_name.assign((char*)identify + sizeof(struct MSG_IdentifyConnection), bufsize-1);
+				printf("len:%d \"%s\"\n", identify->len, _name.c_str());
+				_rxfifo.skip(identify->len);
 
-				if (	name == "CLIENT1") {
+				if (	_name == "CLIENT1") {
 					int server_sockfd = create_server_socket("8080");
 					new ForwardListenSocket(server_sockfd, 80, this);
 				}
 
-				if (name == "CLIENT2") {
+				if (_name == "CLIENT2") {
 					int server_sockfd = create_server_socket("2222");
-					new ForwardListenSocket(server_sockfd, 22, parent);
+					new ForwardListenSocket(server_sockfd, 22, _parent);
 				}
 				break;
 			}
 			case CMD_CLOSE_PORT: {
 				printf("CMD_CLOSE_PORT id:%d\n", closeport->id);
 				conn_from_id(closeport->id).connlist_delete();
-				rxfifo.skip( sizeof(*closeport) );
+				_rxfifo.skip( sizeof(*closeport) );
 				}
 				break;
 			default:
 				printf("Invalid package\n");
 				break;
 		}
-	} while (last_len != rxfifo.len() && rxfifo.len());
+	} while (last_len != _rxfifo.len() && _rxfifo.len());
 
 }
 
 ServerDaemonSocket::ServerDaemonSocket(int fd) {
-	this->fd = fd;
-	this->type = CONN_DAEMON_LISTEN;
+	this->_fd = fd;
+	this->_type = CONN_DAEMON_LISTEN;
 }
 
 void ServerDaemonSocket::connection_handle() {
 	int acceptedfd;
-	acceptedfd = accept(fd, NULL, NULL);
-	if (type == CONN_DAEMON_LISTEN) {
+	acceptedfd = accept(_fd, NULL, NULL);
+	if (_type == CONN_DAEMON_LISTEN) {
 		printf("CONN_DAEMON_LISTEN\n");
 		new ClientConnectionSocket(acceptedfd);
 	}
@@ -435,8 +435,8 @@ void ServerDaemonSocket::connection_handle() {
 }
 
 ClientSocket::ClientSocket(int fd) {
-	this->fd = fd;
-	this->type = CONN_DAEMON;
+	this->_fd = fd;
+	this->_type = CONN_DAEMON;
 }
 
 void ClientSocket::connection_handle() {
@@ -444,15 +444,15 @@ void ClientSocket::connection_handle() {
 		return;
 
 	int last_len = 0;
-	struct CMD_ConnectPort* cmd_connectport = (struct CMD_ConnectPort*)rxfifo.get_out();
-	struct CMD_ClosePort*   cmd_closeport   = (struct CMD_ClosePort*)rxfifo.get_out();
+	struct CMD_ConnectPort* cmd_connectport = (struct CMD_ConnectPort*)_rxfifo.get_out();
+	struct CMD_ClosePort*   cmd_closeport   = (struct CMD_ClosePort*)_rxfifo.get_out();
 
 	do {
-		last_len = rxfifo.len();
+		last_len = _rxfifo.len();
 		struct ConnectedSocket* connection;
 		struct MSG_AckConnectPort ack;
 		int fd;
-		switch (*rxfifo.get_out()) {
+		switch (*_rxfifo.get_out()) {
 			case CMD_CONNECT_PORT:
 				printf("Connect id:%d to port: %d\n", cmd_connectport->id, cmd_connectport->port);
 				ack.type = MSG_ACK_CONNECT_PORT;
@@ -464,13 +464,13 @@ void ClientSocket::connection_handle() {
 				new ForwardSocket(fd, this, cmd_connectport->id);
 
 				std::cout << "Sending ack" << std::endl;
-				txfifo.in( (unsigned char*)&ack, sizeof(ack));
-				rxfifo.skip( sizeof(struct CMD_ConnectPort) );
+				_txfifo.in( (unsigned char*)&ack, sizeof(ack));
+				_rxfifo.skip( sizeof(struct CMD_ConnectPort) );
 				break;
 			case CMD_CLOSE_PORT:
 				printf("Close port: %d\n", cmd_closeport->id);
 				conn_from_id(cmd_closeport->id).conn_close();
-				rxfifo.skip( sizeof(struct CMD_ClosePort) );
+				_rxfifo.skip( sizeof(struct CMD_ClosePort) );
 				break;
 			case MSG_SOCKET_DATA:
 				conn_socket_data(*this);
@@ -479,5 +479,5 @@ void ClientSocket::connection_handle() {
 				printf("Invalid package\n");
 				break;
 		}
-	} while (last_len != rxfifo.len() && rxfifo.len());
+	} while (last_len != _rxfifo.len() && _rxfifo.len());
 }

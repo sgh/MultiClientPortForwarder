@@ -42,20 +42,20 @@ void eventloop();
 
 class ConnectedSocket {
 protected:
-	int    fd;
-	char   type;
+	int    _fd;
+	char   _type;
 
-	std::string  name;
+	std::string  _name;
 
 	/* FORWARD sockets */
-	unsigned short port;
-	ConnectedSocket* parent;
-	SocketFifo rxfifo;
-	SocketFifo txfifo;
+	unsigned short _port;
+	ConnectedSocket* _parent;
+	SocketFifo _rxfifo;
+	SocketFifo _txfifo;
 
 public:
-	bool pending_delete;
-	unsigned short id;
+	bool _pending_delete;
+	unsigned short _id;
 
 	void setup();
 	ConnectedSocket();

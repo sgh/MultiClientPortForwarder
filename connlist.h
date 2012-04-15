@@ -45,8 +45,6 @@ protected:
 	int    _fd;
 	char   _type;
 
-	std::string  _name;
-
 	/* FORWARD sockets */
 	unsigned short _port;
 	ConnectedSocket* _parent;
@@ -102,6 +100,7 @@ public:
  * Class used by the server for each client connection 
  */
 class ClientConnectionSocket : public ConnectedSocket {
+	std::string  _name;
 public:
 	ClientConnectionSocket(int fd);
 	virtual void connection_handle();
